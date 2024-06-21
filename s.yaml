@@ -1,0 +1,123 @@
+edition: 3.0.0
+name: fc3-qwen
+vars:
+  region: 'cn-beijing'
+  apiKey: 'sk-40cf2e84524947d586d5ca741eaab882'
+  model: 'qwen-turbo'
+  clientPassword: 'fc-qwen'
+  clientFunction: 'client_qwen-de0697'
+  proxyFunction: 'proxy_qwen-de0697'
+template:
+  fc3-qwen:
+    internetAccess: true
+resources:
+  proxy:
+    component: fc3
+    props:
+      region: ${vars.region}
+      description: 通义千问代理服务
+      handler: index.handler
+      timeout: 600
+      diskSize: 512
+      runtime: custom.debian10
+      cpu: 1
+      instanceConcurrency: 100
+      memorySize: 1024
+      layers:
+        - acs:fc:${vars.region}:official:layers/Python310/versions/2
+        - >-
+          acs:fc:${vars.region}:official:layers/Python310-Package-Collection/versions/2
+        - acs:fc:${vars.region}:official:layers/Python3-Flask2x/versions/2
+      environmentVariables:
+        DASHSCOPE_API_KEY: ${vars.apiKey}
+        MODEL_NAME: ${vars.model}
+        PYTHONPATH: /opt/python:/code:/code/python
+        LD_LIBRARY_PATH: >-
+          /code:/code/lib:/usr/local/lib:/opt/lib:/opt/php8.1/lib:/opt/php8.0/lib:/opt/php7.2/lib
+        PATH: >-
+          /opt/python3.10/bin:/usr/local/bin/apache-maven/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/ruby/bin:/opt/bin:/code:/code/bin
+      functionName: ${vars.proxyFunction}
+      customRuntimeConfig:
+        port: 8000
+        command:
+          - bootstrap
+      code: ./code/proxy
+      triggers:
+        - description: ''
+          qualifier: LATEST
+          triggerName: defaultTrigger
+          triggerType: http
+          triggerConfig:
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+            authType: anonymous
+            disableURLInternet: false
+    extend:
+      name: fc3-qwen
+  client:
+    component: fc3
+    # actions:
+    #   pre-deploy:
+    #     - run: npm i
+    #       path: ./code/client
+    props:
+      region: ${vars.region}
+      description: 函数计算大模型服务客户端
+      timeout: 3000
+      layers:
+        - acs:fc:${vars.region}:1154600634854327:layers/fc3-qwen/versions/1
+        - acs:fc:${vars.region}:official:layers/Nodejs18/versions/1
+      runtime: custom.debian10
+      instanceConcurrency: 100
+      memorySize: 3072
+      diskSize: 512
+      cpu: 2
+      environmentVariables:
+        NODE_PATH: /opt/nodejs/node_modules
+        PATH: >-
+          /opt/nodejs18/bin::/usr/local/bin/apache-maven/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/ruby/bin:/opt/bin:/code:/code/bin:/opt/nodejs/node_modules/.bin
+        BASE_URL: ${resources.proxy.output.url.system_intranet_url}
+        CODE: ${vars.clientPassword}
+      customRuntimeConfig:
+        port: 3000
+        command:
+          - bootstrap
+      functionName: ${vars.clientFunction}
+      code: ./code/client
+      triggers:
+        - triggerName: defaultTrigger
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - HEAD
+              - OPTIONS
+    extend:
+      name: fc3-qwen
+  fc3_proxy_domain:
+    component: fc3-domain
+    props:
+      region: ${vars.region}
+      domainName: auto
+      protocol: HTTP
+      routeConfig:
+        routes:
+          - path: /*
+            functionName: ${vars.proxyFunction}
+  fc3_client_domain:
+    component: fc3-domain
+    props:
+      region: ${vars.region}
+      domainName: auto
+      protocol: HTTP
+      routeConfig:
+        routes:
+          - path: /*
+            functionName: ${vars.clientFunction}
